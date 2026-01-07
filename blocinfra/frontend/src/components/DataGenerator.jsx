@@ -16,8 +16,8 @@ const AVAILABLE_PRODUCTS = [
 // Packaging hierarchy constants
 const TABLETS_PER_STRIP = 10;
 const STRIPS_PER_BOX = 5;
-const BOXES_PER_CARTON = 10;
-const CARTONS_PER_SHIPMENT = 15;
+const BOXES_PER_CARTON = 5;
+const CARTONS_PER_SHIPMENT = 8;
 
 // Calculated values
 const TABLETS_PER_BOX = TABLETS_PER_STRIP * STRIPS_PER_BOX; // 100
