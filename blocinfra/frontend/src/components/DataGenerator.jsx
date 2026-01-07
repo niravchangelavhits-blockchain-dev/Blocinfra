@@ -164,6 +164,9 @@ const DataGenerator = ({ onUpdate }) => {
                 setProgress(null);
                 fetchStatus();
             }
+            await api.resetGeneratorStats();
+            fetchStatus();
+            onUpdate && onUpdate();
         } catch (error) {
             setError(error.message);
         } finally {
@@ -447,14 +450,6 @@ const DataGenerator = ({ onUpdate }) => {
                             Last Activity: {new Date(stats.lastActivity).toLocaleString()}
                         </div>
                     )}
-
-                    <button
-                        onClick={handleResetStats}
-                        className="btn btn-secondary btn-small"
-                        disabled={generatingProduct}
-                    >
-                        Reset Statistics
-                    </button>
                 </div>
             )}
         </div>
