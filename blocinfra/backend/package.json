@@ -1,0 +1,33 @@
+{
+  "name": "blocinfra-backend",
+  "version": "1.0.0",
+  "description": "BlocInfra - Pharma Supply Chain Backend",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "hyperledger",
+    "fabric",
+    "blockchain",
+    "pharma",
+    "supply-chain"
+  ],
+  "author": "BlocInfra",
+  "license": "MIT",
+  "dependencies": {
+    "@grpc/grpc-js": "^1.9.0",
+    "@hyperledger/fabric-gateway": "^1.4.0",
+    "better-sqlite3": "^12.5.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

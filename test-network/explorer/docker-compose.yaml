@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+version: "2.1"
+
+volumes:
+  pgdata:
+  walletstore:
+
+networks:
+  test:
+    external:
+      name: fabric_test
+
+services:
+  explorerdb.test:
+    image: hyperledger/explorer-db:latest
+    container_name: explorerdb.test
+    hostname: explorerdb.test
+    environment:
+      - DATABASE_DATABASE=fabricexplorer
+      - DATABASE_USERNAME=hppoc
+      - DATABASE_PASSWORD=password
+    healthcheck:
+      test: "pg_isready -h localhost -p 5432 -q -U postgres"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - test
+
+  explorer.test:
+    image: hyperledger/explorer:latest
+    container_name: explorer.test
+    hostname: explorer.test
+    environment:
+      - DATABASE_HOST=explorerdb.test
+      - DATABASE_DATABASE=fabricexplorer
+      - DATABASE_USERNAME=hppoc
+      - DATABASE_PASSWD=password
+      - LOG_LEVEL_APP=debug
+      - LOG_LEVEL_DB=debug
+      - LOG_LEVEL_CONSOLE=info
+      - LOG_CONSOLE_STDOUT=true
+      - DISCOVERY_AS_LOCALHOST=false
+    volumes:
+      - ./config.json:/opt/explorer/app/platform/fabric/config.json
+      - ./first-network.json:/opt/explorer/app/platform/fabric/first-network.json
+      - ../organizations:/tmp/crypto
+      - walletstore:/opt/explorer/wallet
+    ports:
+      - 8080:8080
+    depends_on:
+      explorerdb.test:
+        condition: service_healthy
+    networks:
+      - test

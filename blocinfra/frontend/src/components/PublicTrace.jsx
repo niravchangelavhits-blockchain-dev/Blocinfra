@@ -1,0 +1,670 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
+
+const PublicTrace = () => {
+    const { txHash: urlTxHash } = useParams();
+    const [searchParams] = useSearchParams();
+    const [searchId, setSearchId] = useState('');
+    const [traceResult, setTraceResult] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [expandedNodes, setExpandedNodes] = useState({});
+
+    // Delivery verification state
+    const [certificate, setCertificate] = useState('');
+    const [verifying, setVerifying] = useState(false);
+    const [verificationResult, setVerificationResult] = useState(null);
+    const [showCertInput, setShowCertInput] = useState(false);
+
+    // Item type configurations
+    const itemConfig = {
+        strip: { emoji: '💊', color: '#dc2626', bgColor: '#fef2f2', label: 'Strip' },
+        box: { emoji: '📦', color: '#2563eb', bgColor: '#eff6ff', label: 'Box' },
+        carton: { emoji: '🗃️', color: '#d97706', bgColor: '#fffbeb', label: 'Carton' },
+        shipment: { emoji: '🚚', color: '#059669', bgColor: '#ecfdf5', label: 'Shipment' },
+        order: { emoji: '📋', color: '#7c3aed', bgColor: '#f5f3ff', label: 'Order' }
+    };
+
+    const getConfig = (type) => itemConfig[type?.toLowerCase()] || { emoji: '📄', color: '#64748b', bgColor: '#f8fafc', label: type || 'Item' };
+
+    // Auto-search on load if txHash is in URL
+    useEffect(() => {
+        const hash = urlTxHash || searchParams.get('hash') || searchParams.get('id');
+        if (hash) {
+            setSearchId(hash);
+            performSearch(hash);
+        }
+    }, [urlTxHash, searchParams]);
+
+    // Get API base URL - use relative path in dev (Vite proxy) or dynamic in production
+    const getApiUrl = (endpoint) => {
+        if (import.meta.env.DEV) {
+            // In development, use Vite proxy (relative path)
+            return `/api${endpoint}`;
+        }
+        // In production, use same hostname with backend port
+        const hostname = window.location.hostname;
+        const protocol = window.location.protocol;
+        return `${protocol}//${hostname}:3001/api${endpoint}`;
+    };
+
+    const performSearch = async (id) => {
+        if (!id.trim()) return;
+        setLoading(true);
+        setError('');
+        setTraceResult(null);
+
+        try {
+            // Public API call - no auth required
+            const apiUrl = getApiUrl(`/trace/public/${encodeURIComponent(id.trim())}`);
+            console.log('Fetching from:', apiUrl);
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+
+            if (data.success) {
+                setTraceResult(data.data);
+                setExpandedNodes({});
+            } else {
+                setError(data.message || 'Item not found');
+            }
+        } catch (err) {
+            console.error('Trace error:', err);
+            setError('Failed to trace item. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSearch = (e) => {
+        e.preventDefault();
+        performSearch(searchId);
+    };
+
+    // Handle delivery verification with certificate
+    const handleVerifyDelivery = async () => {
+        if (!certificate.trim()) {
+            setVerificationResult({ success: false, message: 'Please paste your certificate' });
+            return;
+        }
+
+        setVerifying(true);
+        setVerificationResult(null);
+
+        try {
+            const shipmentId = traceResult?.searchedItem?.itemId;
+            const apiUrl = getApiUrl(`/trace/verify-delivery/${encodeURIComponent(shipmentId)}`);
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ certificate: certificate.trim() })
+            });
+
+            const data = await response.json();
+            setVerificationResult(data);
+
+            // If successful, refresh the trace to show updated status
+            if (data.success) {
+                setTimeout(() => {
+                    performSearch(shipmentId);
+                    setShowCertInput(false);
+                    setCertificate('');
+                }, 2000);
+            }
+        } catch (err) {
+            console.error('Verification error:', err);
+            setVerificationResult({
+                success: false,
+                message: 'Failed to verify delivery. Please try again.'
+            });
+        } finally {
+            setVerifying(false);
+        }
+    };
+
+    const toggleNode = (nodeId) => setExpandedNodes(prev => ({ ...prev, [nodeId]: !prev[nodeId] }));
+    const isExpanded = (nodeId) => expandedNodes[nodeId] ?? false;
+
+    const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+    };
+
+    const formatDate = (date) => {
+        if (!date || date === '0001-01-01T00:00:00Z') return 'N/A';
+        return new Date(date).toLocaleString('en-US', {
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+    };
+
+    const formatTxHash = (hash) => hash ? `${hash.substring(0, 8)}...${hash.substring(hash.length - 6)}` : 'N/A';
+
+    const formatStatus = (status) => {
+        if (!status) return null;
+        const statusStr = String(status).toUpperCase();
+        return { text: statusStr, class: statusStr.toLowerCase().replace(/\s+/g, '-') };
+    };
+
+    // ==================== ITEM CARD ====================
+    const ItemCard = ({ item, depth = 0 }) => {
+        if (!item) return null;
+        const config = getConfig(item.itemType);
+        const data = item.current || {};
+        const nodeId = `child-${item.itemId}`;
+        const expanded = isExpanded(nodeId);
+
+        // Get nested children
+        const getNestedChildren = () => {
+            const children = [];
+            const childMap = {};
+
+            // Build map from all children in trace result
+            if (traceResult?.children) {
+                traceResult.children.forEach(c => {
+                    if (c?.itemId) childMap[c.itemId] = c;
+                });
+            }
+
+            // Find children based on item type
+            if (data.strips) data.strips.forEach(id => childMap[id] && children.push(childMap[id]));
+            if (data.boxes) data.boxes.forEach(id => childMap[id] && children.push(childMap[id]));
+            if (data.cartons) data.cartons.forEach(id => childMap[id] && children.push(childMap[id]));
+            if (data.itemIds) data.itemIds.forEach(id => childMap[id] && children.push(childMap[id]));
+
+            return children;
+        };
+
+        const nestedChildren = getNestedChildren();
+        const hasChildren = nestedChildren.length > 0;
+
+        const getContentsLabel = () => {
+            if (data.strips) return `${data.strips.length} Strips`;
+            if (data.boxes) return `${data.boxes.length} Boxes`;
+            if (data.cartons) return `${data.cartons.length} Cartons`;
+            if (data.itemIds) return `${data.itemIds.length} Shipments`;
+            return null;
+        };
+
+        return (
+            <div className="public-item-card" style={{ marginLeft: depth > 0 ? '16px' : '0' }}>
+                <div
+                    className={`item-card-header ${expanded ? 'expanded' : ''}`}
+                    style={{ borderLeftColor: config.color }}
+                    onClick={() => toggleNode(nodeId)}
+                >
+                    <div className="item-card-title">
+                        <span className="item-emoji">{config.emoji}</span>
+                        <span className="item-type" style={{ color: config.color }}>{config.label}</span>
+                        <span className="item-id">{item.itemId.split('-').slice(-2).join('-')}</span>
+                    </div>
+                    <div className="item-card-meta">
+                        {getContentsLabel() && <span className="item-badge">{getContentsLabel()}</span>}
+                        {hasChildren && <span className="expand-arrow">{expanded ? '▼' : '▶'}</span>}
+                    </div>
+                </div>
+
+                {expanded && (
+                    <div className="item-card-body">
+                        <div className="item-detail">
+                            <span className="detail-label">Full ID:</span>
+                            <span className="detail-value">{item.itemId}</span>
+                        </div>
+                        {data.medicineType && (
+                            <div className="item-detail">
+                                <span className="detail-label">Product:</span>
+                                <span className="detail-value">{data.medicineType}</span>
+                            </div>
+                        )}
+                        {data.batchNumber && (
+                            <div className="item-detail">
+                                <span className="detail-label">Batch:</span>
+                                <span className="detail-value">{data.batchNumber}</span>
+                            </div>
+                        )}
+                        {data.mfgDate && (
+                            <div className="item-detail">
+                                <span className="detail-label">Mfg Date:</span>
+                                <span className="detail-value">{data.mfgDate}</span>
+                            </div>
+                        )}
+                        {data.expDate && (
+                            <div className="item-detail">
+                                <span className="detail-label">Exp Date:</span>
+                                <span className="detail-value">{data.expDate}</span>
+                            </div>
+                        )}
+                        {data.status && (
+                            <div className="item-detail">
+                                <span className="detail-label">Status:</span>
+                                <span className={`detail-value status-badge status-${data.status.toLowerCase()}`}>
+                                    {data.status}
+                                </span>
+                            </div>
+                        )}
+                        {data.senderId && (
+                            <div className="item-detail">
+                                <span className="detail-label">Sender:</span>
+                                <span className="detail-value">{data.senderId} ({data.senderOrg})</span>
+                            </div>
+                        )}
+                        {data.receiverId && (
+                            <div className="item-detail">
+                                <span className="detail-label">Receiver:</span>
+                                <span className="detail-value">{data.receiverId} ({data.receiverOrg})</span>
+                            </div>
+                        )}
+                        {data.creationTxId && (
+                            <div className="item-detail">
+                                <span className="detail-label">TX Hash:</span>
+                                <span className="detail-value tx-hash">
+                                    {formatTxHash(data.creationTxId)}
+                                    <button className="copy-btn-small" onClick={(e) => { e.stopPropagation(); copyToClipboard(data.creationTxId); }}>
+                                        📋
+                                    </button>
+                                </span>
+                            </div>
+                        )}
+
+                        {/* Transaction History */}
+                        {item.history && item.history.length > 0 && (
+                            <div className="item-history">
+                                <div className="history-title">Transaction History</div>
+                                {item.history.map((tx, idx) => {
+                                    const status = tx.value?.status || 'Updated';
+                                    const statusClass = `status-${status.toLowerCase().replace(/\s+/g, '-')}`;
+                                    return (
+                                        <div key={idx} className={`history-item ${statusClass}`}>
+                                            <span className={`history-status ${statusClass}`}>{status}</span>
+                                            <span className="history-date">{formatDate(tx.timestamp)}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Nested Children */}
+                        {hasChildren && (
+                            <div className="nested-children">
+                                {nestedChildren.map(child => (
+                                    <ItemCard key={child.itemId} item={child} depth={depth + 1} />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // ==================== PARENT CHAIN ====================
+    const ParentChain = ({ parents }) => {
+        if (!parents || parents.length === 0) return null;
+
+        const ParentCard = ({ parent }) => {
+            const config = getConfig(parent.itemType);
+            const data = parent.current || {};
+            const nodeId = `parent-${parent.itemId}`;
+            const expanded = isExpanded(nodeId);
+
+            const getContentsLabel = () => {
+                if (data.strips) return `${data.strips.length} Strips`;
+                if (data.boxes) return `${data.boxes.length} Boxes`;
+                if (data.cartons) return `${data.cartons.length} Cartons`;
+                if (data.itemIds) return `${data.itemIds.length} Shipments`;
+                return null;
+            };
+
+            return (
+                <div className="parent-card-wrapper">
+                    <div
+                        className={`parent-node clickable ${expanded ? 'expanded' : ''}`}
+                        style={{ borderColor: config.color }}
+                        onClick={() => toggleNode(nodeId)}
+                    >
+                        <span className="parent-emoji">{config.emoji}</span>
+                        <span className="parent-type">{config.label}</span>
+                        <span className="parent-id">{parent.itemId.split('-').slice(-2).join('-')}</span>
+                        <span className="expand-arrow-small">{expanded ? '▼' : '▶'}</span>
+                    </div>
+
+                    {expanded && (
+                        <div className="parent-expanded-content">
+                            <div className="item-detail">
+                                <span className="detail-label">Full ID:</span>
+                                <span className="detail-value">{parent.itemId}</span>
+                            </div>
+                            {data.medicineType && (
+                                <div className="item-detail">
+                                    <span className="detail-label">Product:</span>
+                                    <span className="detail-value">{data.medicineType}</span>
+                                </div>
+                            )}
+                            {data.batchNumber && (
+                                <div className="item-detail">
+                                    <span className="detail-label">Batch:</span>
+                                    <span className="detail-value">{data.batchNumber}</span>
+                                </div>
+                            )}
+                            {data.mfgDate && (
+                                <div className="item-detail">
+                                    <span className="detail-label">Mfg Date:</span>
+                                    <span className="detail-value">{data.mfgDate}</span>
+                                </div>
+                            )}
+                            {data.expDate && (
+                                <div className="item-detail">
+                                    <span className="detail-label">Exp Date:</span>
+                                    <span className="detail-value">{data.expDate}</span>
+                                </div>
+                            )}
+                            {data.status && (
+                                <div className="item-detail">
+                                    <span className="detail-label">Status:</span>
+                                    <span className={`detail-value status-badge status-${data.status.toLowerCase()}`}>
+                                        {data.status}
+                                    </span>
+                                </div>
+                            )}
+                            {getContentsLabel() && (
+                                <div className="item-detail">
+                                    <span className="detail-label">Contains:</span>
+                                    <span className="detail-value">{getContentsLabel()}</span>
+                                </div>
+                            )}
+                            {data.senderId && (
+                                <div className="item-detail">
+                                    <span className="detail-label">Sender:</span>
+                                    <span className="detail-value">{data.senderId} ({data.senderOrg})</span>
+                                </div>
+                            )}
+                            {data.receiverId && (
+                                <div className="item-detail">
+                                    <span className="detail-label">Receiver:</span>
+                                    <span className="detail-value">{data.receiverId} ({data.receiverOrg})</span>
+                                </div>
+                            )}
+                            {data.creationTxId && (
+                                <div className="item-detail">
+                                    <span className="detail-label">TX Hash:</span>
+                                    <span className="detail-value tx-hash">
+                                        {formatTxHash(data.creationTxId)}
+                                        <button className="copy-btn-small" onClick={(e) => { e.stopPropagation(); copyToClipboard(data.creationTxId); }}>
+                                            📋
+                                        </button>
+                                    </span>
+                                </div>
+                            )}
+                            {data.createdAt && (
+                                <div className="item-detail">
+                                    <span className="detail-label">Created:</span>
+                                    <span className="detail-value">{formatDate(data.createdAt)}</span>
+                                </div>
+                            )}
+
+                            {/* Transaction History for parent */}
+                            {parent.history && parent.history.length > 0 && (
+                                <div className="item-history">
+                                    <div className="history-title">Transaction History</div>
+                                    {parent.history.map((tx, idx) => {
+                                        const status = tx.value?.status || 'Updated';
+                                        const statusClass = `status-${status.toLowerCase().replace(/\s+/g, '-')}`;
+                                        return (
+                                            <div key={idx} className={`history-item ${statusClass}`}>
+                                                <span className={`history-status ${statusClass}`}>{status}</span>
+                                                <span className="history-date">{formatDate(tx.timestamp)}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        return (
+            <div className="parent-chain">
+                <div className="section-title">📍 Supply Chain Path</div>
+                <div className="parent-path">
+                    {parents.map((parent, idx) => (
+                        <React.Fragment key={parent.itemId}>
+                            <ParentCard parent={parent} />
+                            {idx < parents.length - 1 && <span className="path-arrow">↓ </span>}
+                        </React.Fragment>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+    // ==================== MAIN RENDER ====================
+    return (
+        <div className="public-trace-wrapper">
+            {/* Header */}
+            <header className="public-header">
+                <div className="public-logo">
+                    <img src="/logo.svg" alt="BlocInfra" className="public-header-logo" />
+                </div>
+            </header>
+
+            {/* Search Box */}
+            <div className="public-search-container">
+                <form onSubmit={handleSearch} className="public-search-form">
+                    <input
+                        type="text"
+                        value={searchId}
+                        onChange={(e) => setSearchId(e.target.value)}
+                        placeholder="Enter Transaction Hash or Item ID..."
+                        className="public-search-input"
+                    />
+                    <button type="submit" disabled={loading} className="public-search-btn">
+                        {loading ? '...' : '🔍'}
+                    </button>
+                </form>
+            </div>
+
+            {/* Error */}
+            {error && (
+                <div className="public-error">
+                    <span>❌</span> {error}
+                </div>
+            )}
+
+            {/* Loading */}
+            {loading && (
+                <div className="public-loading">
+                    <div className="loading-spinner"></div>
+                    <p>Fetching blockchain data...</p>
+                </div>
+            )}
+
+            {/* Results */}
+            {traceResult && !loading && (
+                <div className="public-results">
+
+                    {/* Delivery Status Section - Shows for shipments with orders */}
+                    {traceResult.deliveryStatus && (
+                        <div className={`delivery-status-section ${traceResult.deliveryStatus.status.toLowerCase()}`}>
+                            {/* Already Delivered */}
+                            {traceResult.deliveryStatus.status === 'DELIVERED' && (
+                                <div className="delivery-confirmed">
+                                    <div className="delivery-icon">✅</div>
+                                    <div className="delivery-info">
+                                        <h3>Delivery Confirmed</h3>
+                                        <p>This shipment was delivered successfully</p>
+                                        {traceResult.deliveryStatus.deliveredAt && (
+                                            <p className="delivery-meta">
+                                                <strong>Delivered:</strong> {formatDate(traceResult.deliveryStatus.deliveredAt)}
+                                            </p>
+                                        )}
+                                        {traceResult.deliveryStatus.deliveredBy && (
+                                            <p className="delivery-meta">
+                                                <strong>Received by:</strong> {traceResult.deliveryStatus.deliveredBy}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Awaiting Delivery - Show certificate verification */}
+                            {traceResult.deliveryStatus.status === 'AWAITING_DELIVERY' && (
+                                <div className="delivery-awaiting">
+                                    <div className="delivery-icon">📦</div>
+                                    <div className="delivery-info">
+                                        <h3>Confirm Delivery</h3>
+                                        <p>This shipment is ready for delivery confirmation</p>
+                                        {traceResult.orderInfo && (
+                                            <div className="order-details">
+                                                <p><strong>Order:</strong> {traceResult.orderInfo.orderId}</p>
+                                                <p><strong>From:</strong> {traceResult.orderInfo.senderId} ({traceResult.orderInfo.senderOrg})</p>
+                                                <p><strong>To:</strong> {traceResult.orderInfo.receiverId} ({traceResult.orderInfo.receiverOrg})</p>
+                                            </div>
+                                        )}
+
+                                        {!showCertInput ? (
+                                            <button
+                                                className="confirm-delivery-btn"
+                                                onClick={() => setShowCertInput(true)}
+                                            >
+                                                🔐 Confirm Delivery with Certificate
+                                            </button>
+                                        ) : (
+                                            <div className="certificate-input-section">
+                                                <p className="cert-instructions">
+                                                    Paste your X.509 certificate (PEM format) to verify your identity and confirm delivery:
+                                                </p>
+                                                <textarea
+                                                    className="certificate-textarea"
+                                                    value={certificate}
+                                                    onChange={(e) => setCertificate(e.target.value)}
+                                                    placeholder="-----BEGIN CERTIFICATE-----&#10;MIICkjCCAjigAwIBAgIUK8r...&#10;-----END CERTIFICATE-----"
+                                                    rows={8}
+                                                />
+                                                <div className="cert-actions">
+                                                    <button
+                                                        className="verify-btn"
+                                                        onClick={handleVerifyDelivery}
+                                                        disabled={verifying || !certificate.trim()}
+                                                    >
+                                                        {verifying ? 'Verifying...' : '✓ Verify & Confirm'}
+                                                    </button>
+                                                    <button
+                                                        className="cancel-btn"
+                                                        onClick={() => {
+                                                            setShowCertInput(false);
+                                                            setCertificate('');
+                                                            setVerificationResult(null);
+                                                        }}
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+
+                                                {/* Verification Result */}
+                                                {verificationResult && (
+                                                    <div className={`verification-result ${verificationResult.success ? 'success' : 'error'} ${verificationResult.alert ? 'alert' : ''}`}>
+                                                        {verificationResult.success ? (
+                                                            <>
+                                                                <span className="result-icon">✅</span>
+                                                                <div>
+                                                                    <strong>Delivery Confirmed!</strong>
+                                                                    <p>{verificationResult.message}</p>
+                                                                </div>
+                                                            </>
+                                                        ) : verificationResult.alert ? (
+                                                            <>
+                                                                <span className="result-icon">🚨</span>
+                                                                <div>
+                                                                    <strong>SECURITY ALERT!</strong>
+                                                                    <p>{verificationResult.message}</p>
+                                                                    {verificationResult.details && (
+                                                                        <div className="alert-details">
+                                                                            <p>Expected: {verificationResult.details.expected?.userId} ({verificationResult.details.expected?.org})</p>
+                                                                            <p>Your certificate: {verificationResult.details.actual?.userId} ({verificationResult.details.actual?.org})</p>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <span className="result-icon">❌</span>
+                                                                <div>
+                                                                    <strong>Verification Failed</strong>
+                                                                    <p>{verificationResult.message || verificationResult.error}</p>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Not Dispatched Yet */}
+                            {traceResult.deliveryStatus.status === 'NOT_DISPATCHED' && (
+                                <div className="delivery-pending">
+                                    <div className="delivery-icon">⏳</div>
+                                    <div className="delivery-info">
+                                        <h3>Pending Dispatch</h3>
+                                        <p>This shipment is part of an order but has not been dispatched yet</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/*
+                        Tree visibility logic:
+                        - HIDE tree ONLY when: scanning SHIPMENT + order is DISPATCHED (AWAITING_DELIVERY)
+                        - All other cases: tree is visible (strips, boxes, cartons, orders, or shipments not dispatched)
+                    */}
+                    {traceResult.deliveryStatus?.status === 'AWAITING_DELIVERY' ? (
+                        /* Shipment scanned + order is DISPATCHED = Hide tree, show verification notice */
+                        <div className="tree-hidden-notice">
+                            <div className="notice-icon">🔒</div>
+                            <div className="notice-text">
+                                <strong>Shipment Verification Required</strong>
+                                <p>This shipment has been dispatched. Please verify your identity with your certificate above to view the traceability details and confirm delivery.</p>
+                            </div>
+                        </div>
+                    ) : (
+                        /* All other cases: show tree normally */
+                        <>
+                            <div className="main-item-section">
+                                <div className="section-title">
+                                    {getConfig(traceResult.searchedItem?.itemType).emoji} Item Details
+                                </div>
+                                <ItemCard item={traceResult.searchedItem} />
+                            </div>
+
+                            {/* Parent Chain */}
+                            {traceResult.parents && traceResult.parents.length > 0 && (
+                                <ParentChain parents={traceResult.parents} />
+                            )}
+
+                            {/* Verification Badge */}
+                            <div className="verification-badge">
+                                <span className="badge-icon">✓</span>
+                                <div className="badge-text">
+                                    <strong>Blockchain Verified</strong>
+                                    <span>This item's authenticity is verified on Hyperledger Fabric</span>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
+
+            {/* Footer */}
+            <footer className="public-footer">
+                <p>Powered by Hyperledger Fabric Blockchain</p>
+                <p>© 2025 BlocInfra - Pharma Supply Chain</p>
+            </footer>
+        </div>
+    );
+};
+
+export default PublicTrace;
