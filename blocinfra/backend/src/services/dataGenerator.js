@@ -2,10 +2,14 @@ const fabricService = require('./fabricService');
 const { BATCH_PREFIXES } = require('../config/constants');
 
 // Packaging hierarchy constants
-const TABLETS_PER_STRIP = 10;
-const STRIPS_PER_BOX = 5;
-const BOXES_PER_CARTON = 5;
-const CARTONS_PER_SHIPMENT = 8;
+const TABLETS_PER_STRIP = 10;    // 10 tablets per strip
+const STRIPS_PER_BOX = 5;        // 5 strips per box (50 tablets)
+const BOXES_PER_CARTON = 5;      // 5 boxes per carton (250 tablets)
+const CARTONS_PER_SHIPMENT = 8;  // 8 cartons per shipment (2000 tablets)
+
+// Minimum tablets for 1 full shipment
+const TABLETS_PER_SHIPMENT = TABLETS_PER_STRIP * STRIPS_PER_BOX * BOXES_PER_CARTON * CARTONS_PER_SHIPMENT; // 2000
+const MIN_TABLETS = TABLETS_PER_SHIPMENT; // Minimum 2000 tablets
 
 class DataGenerator {
     constructor() {
@@ -61,18 +65,44 @@ class DataGenerator {
     }
 
     // Calculate production breakdown from tablet count
+    // Always creates FULL shipments - no partial shipments allowed
     calculateProductionPlan(tablets) {
-        const totalStrips = Math.ceil(tablets / TABLETS_PER_STRIP);
-        const totalBoxes = Math.ceil(totalStrips / STRIPS_PER_BOX);
-        const totalCartons = Math.ceil(totalBoxes / BOXES_PER_CARTON);
-        const totalShipments = Math.ceil(totalCartons / CARTONS_PER_SHIPMENT);
+        // Round up to nearest full shipment (2000 tablets)
+        const totalShipments = Math.ceil(tablets / TABLETS_PER_SHIPMENT);
+
+        // Calculate exact amounts for full shipments
+        const totalCartons = totalShipments * CARTONS_PER_SHIPMENT;
+        const totalBoxes = totalCartons * BOXES_PER_CARTON;
+        const totalStrips = totalBoxes * STRIPS_PER_BOX;
+        const actualTablets = totalStrips * TABLETS_PER_STRIP;
 
         return {
             totalStrips,
             totalBoxes,
             totalCartons,
-            totalShipments
+            totalShipments,
+            actualTablets,  // The rounded-up tablet count
+            originalTablets: tablets
         };
+    }
+
+    // Normalize tablet count to ensure full shipments
+    normalizeTabletCount(tablets) {
+        // Enforce minimum 2000 tablets
+        if (tablets < MIN_TABLETS) {
+            console.log(`Tablet count ${tablets} is below minimum. Adjusting to ${MIN_TABLETS}`);
+            return MIN_TABLETS;
+        }
+
+        // Round up to nearest full shipment
+        const shipments = Math.ceil(tablets / TABLETS_PER_SHIPMENT);
+        const normalized = shipments * TABLETS_PER_SHIPMENT;
+
+        if (normalized !== tablets) {
+            console.log(`Tablet count ${tablets} rounded up to ${normalized} for full shipments`);
+        }
+
+        return normalized;
     }
 
     delay(ms) {
@@ -184,21 +214,32 @@ class DataGenerator {
 
     // Main production function - PARALLEL PROCESSING
     // Creates strips and immediately seals into boxes/cartons/shipments as items become available
+    // ALWAYS creates full shipments - no partial shipments allowed
     async produceProduct(product, tablets) {
+        // Normalize tablet count to ensure full shipments
+        const normalizedTablets = this.normalizeTabletCount(tablets);
+
         console.log(`\n========================================`);
-        console.log(`Starting production for ${product}: ${tablets} tablets`);
+        console.log(`Starting production for ${product}`);
+        console.log(`Requested: ${tablets} tablets`);
+        if (normalizedTablets !== tablets) {
+            console.log(`Adjusted to: ${normalizedTablets} tablets (for full shipments)`);
+        }
         console.log(`========================================\n`);
 
-        const plan = this.calculateProductionPlan(tablets);
+        const plan = this.calculateProductionPlan(normalizedTablets);
         console.log(`Production plan for ${product}:`);
-        console.log(`  - Strips: ${plan.totalStrips}`);
-        console.log(`  - Boxes: ${plan.totalBoxes}`);
-        console.log(`  - Cartons: ${plan.totalCartons}`);
-        console.log(`  - Shipments: ${plan.totalShipments}`);
+        console.log(`  - Tablets: ${plan.actualTablets}`);
+        console.log(`  - Strips: ${plan.totalStrips} (${TABLETS_PER_STRIP} tablets each)`);
+        console.log(`  - Boxes: ${plan.totalBoxes} (${STRIPS_PER_BOX} strips each)`);
+        console.log(`  - Cartons: ${plan.totalCartons} (${BOXES_PER_CARTON} boxes each)`);
+        console.log(`  - Shipments: ${plan.totalShipments} (${CARTONS_PER_SHIPMENT} cartons each)`);
 
         // Initialize progress for this product
         this.productionProgress = {
             currentProduct: product,
+            originalTablets: tablets,
+            actualTablets: plan.actualTablets,
             totalStrips: plan.totalStrips,
             totalBoxes: plan.totalBoxes,
             totalCartons: plan.totalCartons,
@@ -206,7 +247,8 @@ class DataGenerator {
             stripsCreated: 0,
             boxesCreated: 0,
             cartonsCreated: 0,
-            shipmentsCreated: 0
+            shipmentsCreated: 0,
+            status: 'running'
         };
 
         this.batchCounter++;
@@ -269,46 +311,28 @@ class DataGenerator {
             }
         }
 
-        // Handle remaining items that didn't fill a complete container
-        console.log(`\nHandling remaining items...`);
-        console.log(`  Pending strips: ${pendingStrips.length}`);
-        console.log(`  Pending boxes: ${pendingBoxes.length}`);
-        console.log(`  Pending cartons: ${pendingCartons.length}`);
-
-        // Seal remaining strips into partial box if any
-        if (pendingStrips.length > 0 && this.isRunning) {
-            const stripIds = pendingStrips.map(s => s.id);
-            const box = await this.createBoxFromStrips(product, stripIds);
-            if (box) {
-                pendingBoxes.push(box);
-            }
-            pendingStrips.length = 0;
+        // With normalized tablet counts, there should be NO remaining items
+        // But log a warning if there are (indicates a bug)
+        if (pendingStrips.length > 0 || pendingBoxes.length > 0 || pendingCartons.length > 0) {
+            console.warn(`WARNING: Unexpected remaining items after production!`);
+            console.warn(`  Pending strips: ${pendingStrips.length}`);
+            console.warn(`  Pending boxes: ${pendingBoxes.length}`);
+            console.warn(`  Pending cartons: ${pendingCartons.length}`);
         }
 
-        // Seal remaining boxes into partial carton if any
-        if (pendingBoxes.length > 0 && this.isRunning) {
-            const boxIds = pendingBoxes.map(b => b.id);
-            const carton = await this.createCartonFromBoxes(product, boxIds);
-            if (carton) {
-                pendingCartons.push(carton);
-            }
-            pendingBoxes.length = 0;
-        }
-
-        // Seal remaining cartons into partial shipment if any
-        if (pendingCartons.length > 0 && this.isRunning) {
-            const cartonIds = pendingCartons.map(c => c.id);
-            await this.createShipmentFromCartons(product, cartonIds);
-            pendingCartons.length = 0;
+        // Mark production progress as completed
+        if (this.productionProgress) {
+            this.productionProgress.status = 'completed';
         }
 
         console.log(`\n========================================`);
-        console.log(`Completed production for ${product}`);
+        console.log(`COMPLETED production for ${product}`);
         console.log(`Created: ${this.productionProgress.stripsCreated} strips, ${this.productionProgress.boxesCreated} boxes, ${this.productionProgress.cartonsCreated} cartons, ${this.productionProgress.shipmentsCreated} shipments`);
         console.log(`========================================\n`);
 
         return {
             product,
+            status: 'completed',
             strips: this.productionProgress.stripsCreated,
             boxes: this.productionProgress.boxesCreated,
             cartons: this.productionProgress.cartonsCreated,
@@ -327,16 +351,55 @@ class DataGenerator {
             return { success: false, message: 'No products specified for production' };
         }
 
+        // Validate and normalize tablet counts
+        const normalizedItems = productionItems.map(item => {
+            const normalizedTablets = this.normalizeTabletCount(item.tablets);
+            return {
+                product: item.product,
+                tablets: normalizedTablets,
+                originalTablets: item.tablets
+            };
+        });
+
         try {
             await fabricService.connect();
+
+            // Reset stats when starting new production
+            this.stats = {
+                stripsCreated: 0,
+                boxesCreated: 0,
+                cartonsCreated: 0,
+                shipmentsCreated: 0,
+                lastActivity: new Date(),
+                errors: []
+            };
+
             this.isRunning = true;
-            this.productionQueue = [...productionItems];
-            console.log('Production started with queue:', JSON.stringify(productionItems));
+            this.productionQueue = [...normalizedItems];
+
+            // Log the normalized production plan
+            console.log('\n========================================');
+            console.log('PRODUCTION STARTED');
+            console.log('========================================');
+            normalizedItems.forEach(item => {
+                const plan = this.calculateProductionPlan(item.tablets);
+                console.log(`${item.product}: ${item.originalTablets} tablets -> ${item.tablets} tablets (${plan.totalShipments} full shipments)`);
+            });
+            console.log('========================================\n');
 
             // Process each product in the queue
             this.processProductionQueue();
 
-            return { success: true, message: 'Production started' };
+            return {
+                success: true,
+                message: 'Production started',
+                normalizedItems: normalizedItems.map(item => ({
+                    product: item.product,
+                    originalTablets: item.originalTablets,
+                    actualTablets: item.tablets,
+                    shipments: Math.ceil(item.tablets / TABLETS_PER_SHIPMENT)
+                }))
+            };
         } catch (error) {
             console.error('Failed to start production:', error);
             this.isRunning = false;
@@ -363,11 +426,21 @@ class DataGenerator {
             }
         }
 
-        // Production complete
+        // Production complete - update status BEFORE clearing progress
+        console.log('\n========================================');
+        console.log('ALL PRODUCTION COMPLETED');
+        console.log(`Total: ${this.stats.stripsCreated} strips, ${this.stats.boxesCreated} boxes, ${this.stats.cartonsCreated} cartons, ${this.stats.shipmentsCreated} shipments`);
+        console.log('========================================\n');
+
+        // Keep the final progress for status display, but mark as completed
+        if (this.productionProgress) {
+            this.productionProgress.status = 'completed';
+        }
+
         this.isRunning = false;
         this.currentProduction = null;
-        this.productionProgress = null;
-        console.log('Production queue completed');
+        // Don't null out productionProgress immediately - keep it for status display
+        // It will be reset when new production starts
     }
 
     // Legacy start method (random generation)
@@ -377,9 +450,9 @@ class DataGenerator {
             return { success: false, message: 'Generator already running' };
         }
 
-        // For backward compatibility, generate random production
+        // For backward compatibility, generate random production (1 full shipment = 2000 tablets)
         const randomProduct = BATCH_PREFIXES[Math.floor(Math.random() * BATCH_PREFIXES.length)];
-        const randomTablets = 30000; // 1 shipment worth
+        const randomTablets = TABLETS_PER_SHIPMENT; // 2000 tablets = 1 full shipment
 
         return this.startProduction([{ product: randomProduct, tablets: randomTablets }]);
     }
@@ -398,14 +471,32 @@ class DataGenerator {
     }
 
     getStatus() {
+        // Determine overall production status
+        let productionStatus = 'idle';
+        if (this.isRunning) {
+            productionStatus = 'running';
+        } else if (this.productionProgress && this.productionProgress.status === 'completed') {
+            productionStatus = 'completed';
+        }
+
         return {
             success: true,
             isRunning: this.isRunning,
+            productionStatus: productionStatus,
             stats: this.stats,
             currentProduction: this.currentProduction,
             productionProgress: this.productionProgress,
             queueLength: this.productionQueue.length,
-            recentErrors: this.stats.errors.slice(-5)
+            recentErrors: this.stats.errors.slice(-5),
+            // Packaging info for frontend
+            packagingInfo: {
+                tabletsPerStrip: TABLETS_PER_STRIP,
+                stripsPerBox: STRIPS_PER_BOX,
+                boxesPerCarton: BOXES_PER_CARTON,
+                cartonsPerShipment: CARTONS_PER_SHIPMENT,
+                tabletsPerShipment: TABLETS_PER_SHIPMENT,
+                minTablets: MIN_TABLETS
+            }
         };
     }
 
