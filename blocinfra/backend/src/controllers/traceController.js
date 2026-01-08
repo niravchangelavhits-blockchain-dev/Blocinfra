@@ -17,14 +17,14 @@ async function findOrderForShipment(shipmentId) {
             limit: 1
         });
         const options = {
-            hostname: 'localhost',
-            port: 5984,
-            path: '/mychannel_pharma/_find',
+            hostname: process.env.COUCHDB_HOST || 'localhost',
+            port: process.env.COUCHDB_PORT || 5984,
+            path: `/${process.env.COUCHDB_DB || 'mychannel_pharma'}/_find`,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(query),
-                'Authorization': 'Basic ' + Buffer.from('admin:adminpw').toString('base64')
+                'Authorization': 'Basic ' + Buffer.from(`${process.env.COUCHDB_USERNAME || 'admin'}:${process.env.COUCHDB_PASSWORD || 'adminpw'}`).toString('base64')
             },
             timeout: 5000
         };
@@ -60,14 +60,14 @@ async function findItemByTxHash(txHash) {
             use_index: 'indexCreationTxIdDoc'
         });
         const options = {
-            hostname: 'localhost',
-            port: 5984,
-            path: '/mychannel_pharma/_find',
+            hostname: process.env.COUCHDB_HOST || 'localhost',
+            port: process.env.COUCHDB_PORT || 5984,
+            path: `/${process.env.COUCHDB_DB || 'mychannel_pharma'}/_find`,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(query),
-                'Authorization': 'Basic ' + Buffer.from('admin:adminpw').toString('base64')
+                'Authorization': 'Basic ' + Buffer.from(`${process.env.COUCHDB_USERNAME || 'admin'}:${process.env.COUCHDB_PASSWORD || 'adminpw'}`).toString('base64')
             },
             timeout: 5000
         };

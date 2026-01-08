@@ -6,9 +6,9 @@ const http = require('http');
 
 const COUCHDB_HOST = process.env.COUCHDB_HOST || 'localhost';
 const COUCHDB_PORT = process.env.COUCHDB_PORT || 5984;
-const COUCHDB_USER = process.env.COUCHDB_USER || 'admin';
+const COUCHDB_USER = process.env.COUCHDB_USERNAME || 'admin';
 const COUCHDB_PASSWORD = process.env.COUCHDB_PASSWORD || 'adminpw';
-const COUCHDB_DATABASE = process.env.COUCHDB_DATABASE || 'mychannel_pharma';
+const COUCHDB_DATABASE = process.env.COUCHDB_DB || 'mychannel_pharma';
 
 // Required indexes for optimal query performance
 const REQUIRED_INDEXES = [
