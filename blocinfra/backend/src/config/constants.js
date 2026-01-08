@@ -48,14 +48,15 @@ module.exports = {
         ORDER: 'order'
     },
 
-    // Data Generation Config
+    // Data Generation Config - Packaging Hierarchy
+    // 1 shipment = 8 cartons × 5 boxes × 5 strips × 10 tablets = 2000 tablets
     GENERATION: {
-        STRIPS_PER_BOX: 5,        // 5 strips = 1 box
-        BOXES_PER_CARTON: 10,     // 10 boxes = 1 carton
-        CARTONS_PER_SHIPMENT: 10, // 10 cartons = 1 shipment
-        MIN_STRIPS_PER_CYCLE: 1,  // Random strips: min
-        MAX_STRIPS_PER_CYCLE: 8,  // Random strips: max
-        INTERVAL_MS: 3000         // Faster cycles
+        TABLETS_PER_STRIP: 10,     // 10 tablets = 1 strip
+        STRIPS_PER_BOX: 5,         // 5 strips = 1 box (50 tablets)
+        BOXES_PER_CARTON: 5,       // 5 boxes = 1 carton (250 tablets)
+        CARTONS_PER_SHIPMENT: 8,   // 8 cartons = 1 shipment (2000 tablets)
+        TABLETS_PER_SHIPMENT: 2000, // Minimum tablets for 1 full shipment
+        MIN_TABLETS: 2000          // Minimum production quantity
     },
 
     // Batch prefixes for dummy data
