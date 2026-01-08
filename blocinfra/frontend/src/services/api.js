@@ -1,31 +1,37 @@
 // Dynamically determine API URL based on current hostname
 // This allows the app to work when accessed from other machines via port forwarding or ngrok
-const getApiBaseUrl = () => {
+//const getApiBaseUrl = () => {
     // If VITE_API_URL is explicitly set, use it
-    if (import.meta.env.VITE_API_URL) {
-        return import.meta.env.VITE_API_URL;
-    }
+  //  if (import.meta.env.VITE_API_URL) {
+  //      return import.meta.env.VITE_API_URL;
+  //  }
     
     // Get current hostname and protocol
-    const hostname = window.location.hostname;
-    const protocol = window.location.protocol;
-    const port = window.location.port;
+   // const hostname = window.location.hostname;
+    //const protocol = window.location.protocol;
+   // const port = window.location.port;
     
     // If accessing through ngrok or any tunnel (not localhost), use relative path
     // This allows Vite's proxy to handle the request and forward to backend
     // The proxy works even when accessed through ngrok because it's server-side
-    if (import.meta.env.DEV) {
+   // if (import.meta.env.DEV) {
         // In development, always use relative path to leverage Vite proxy
         // This works for both localhost and ngrok/tunnel scenarios
-        return '/api';
-    }
+     //   return '/api';
+  //  }
     
     // In production build, use the same hostname with port 3001
     // (assuming both ports are forwarded in production)
-    return `${protocol}//${hostname}:3001/api`;
-};
+   // return `${protocol}//${hostname}:3001/api`;
+//};
 
-const API_BASE_URL = getApiBaseUrl();
+//const API_BASE_URL = getApiBaseUrl();
+const API_BASE_URL = import.meta.env.VITE_API_URL;
+
+
+if (!API_BASE_URL) {
+    throw new Error('VITE_API_URL is not defined');
+}
 
 class ApiService {
     constructor() {

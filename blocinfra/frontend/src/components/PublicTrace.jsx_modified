@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL;
-
 const PublicTrace = () => {
     const { txHash: urlTxHash } = useParams();
     const [searchParams] = useSearchParams();
@@ -38,22 +36,18 @@ const PublicTrace = () => {
         }
     }, [urlTxHash, searchParams]);
 
-    // Get API base URL - use relative path in dev (Vite proxy) or dynamic in production
-    
-     const getApiUrl = (endpoint) => {
-     return `${API_BASE_URL}${endpoint}`;
-     };
- 
-   // const getApiUrl = (endpoint) => {
-   //     if (import.meta.env.DEV) {
-   //        // In development, use Vite proxy (relative path)
-   //         return `/api${endpoint}`;
-   //     }
-  //     // In production, use same hostname with backend port
-   //     const hostname = window.location.hostname;
-   //    const protocol = window.location.protocol;
-   //     return `${protocol}//${hostname}:3001/api${endpoint}`;
-   // };
+     // Get API base URL - use relative path in dev (Vite proxy) or dynamic in production
+     const getApiUrl = (endpoint) => `${import.meta.env.VITE_API_URL}${endpoint}`;
+    #const getApiUrl = (endpoint) => {
+      #  if (import.meta.env.DEV) {
+      #      // In development, use Vite proxy (relative path)
+      #      return `/api${endpoint}`;
+      #  }
+        // In production, use same hostname with backend port
+     #   const hostname = window.location.hostname;
+      #  const protocol = window.location.protocol;
+      #  return `${protocol}//${hostname}:3001/api${endpoint}`;
+   # };
 
     const performSearch = async (id) => {
         if (!id.trim()) return;

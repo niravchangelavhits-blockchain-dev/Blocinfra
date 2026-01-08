@@ -7,6 +7,7 @@ const authMiddleware = {
     verifyToken(req, res, next) {
         try {
             const authHeader = req.headers.authorization;
+           console.log(authHeader)        
 
             if (!authHeader) {
                 return res.status(401).json({
@@ -16,6 +17,7 @@ const authMiddleware = {
             }
 
             const token = authHeader.split(' ')[1]; // Bearer <token>
+		console.log(token)
 
             if (!token) {
                 return res.status(401).json({

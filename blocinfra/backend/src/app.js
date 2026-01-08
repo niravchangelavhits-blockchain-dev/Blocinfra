@@ -25,7 +25,8 @@ const corsOptions = {
         
         const allowedOrigins = process.env.FRONTEND_URL 
             ? process.env.FRONTEND_URL.split(',')
-            : ['http://localhost:5173'];
+            : ['http://localhost:5173',
+               'https://blockinfra.appworkdemo.com'];
         
         // In development, allow any origin (useful for port forwarding)
         if (process.env.NODE_ENV !== 'production') {
